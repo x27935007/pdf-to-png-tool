@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF 转 PNG 图片工具</title>
+    <title>PDF 工具箱 - 转图片 & 提取图片</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -20,7 +21,7 @@
         }
 
         .container {
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
             background: white;
             border-radius: 20px;
@@ -39,6 +40,44 @@
             text-align: center;
             color: #666;
             margin-bottom: 30px;
+        }
+
+        /* 模式切换 */
+        .mode-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 25px;
+        }
+
+        .mode-tab {
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            background: white;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s;
+            font-size: 15px;
+            font-weight: 500;
+            color: #666;
+        }
+
+        .mode-tab:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .mode-tab.active {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .mode-tab .icon {
+            font-size: 24px;
+            display: block;
+            margin-bottom: 5px;
         }
 
         .upload-area {
@@ -137,6 +176,14 @@
             cursor: not-allowed;
         }
 
+        .btn-extract {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .btn-extract:hover:not(:disabled) {
+            box-shadow: 0 10px 30px rgba(245, 87, 108, 0.4);
+        }
+
         .progress-container {
             margin-top: 30px;
             display: none;
@@ -168,6 +215,10 @@
             transition: width 0.3s;
         }
 
+        .progress-fill.extract {
+            background: linear-gradient(90deg, #f093fb 0%, #f5576c 100%);
+        }
+
         .preview-area {
             margin-top: 30px;
             display: none;
@@ -195,9 +246,9 @@
 
         .preview-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
             gap: 15px;
-            max-height: 400px;
+            max-height: 500px;
             overflow-y: auto;
             padding: 10px;
             background: #f8f9fa;
@@ -218,7 +269,9 @@
 
         .preview-item img {
             width: 100%;
-            height: auto;
+            height: 150px;
+            object-fit: contain;
+            background: #f0f0f0;
             display: block;
         }
 
@@ -228,6 +281,18 @@
             font-size: 12px;
             color: #666;
             background: #f5f5f5;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .preview-item .page-info {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 8px;
+            background: #fafafa;
+            font-size: 11px;
+            color: #888;
         }
 
         .download-all {
@@ -305,12 +370,47 @@
         .tips li {
             margin-bottom: 5px;
         }
+
+        .stats {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            padding: 10px 15px;
+            background: #f0f3ff;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #555;
+        }
+
+        .stat-item strong {
+            color: #667eea;
+        }
+
+        .hidden {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📄 PDF 转 PNG 图片</h1>
-        <p class="subtitle">将 PDF 文档转换为高清 PNG 格式图片</p>
+        <h1>📄 PDF 工具箱</h1>
+        <p class="subtitle">PDF 转图片 / 提取图片</p>
+
+        <!-- 模式切换 -->
+        <div class="mode-tabs">
+            <div class="mode-tab active" data-mode="convert">
+                <span class="icon">🖼️</span>
+                页面转图片
+            </div>
+            <div class="mode-tab" data-mode="extract">
+                <span class="icon">📸</span>
+                提取图片
+            </div>
+        </div>
 
         <div class="upload-area" id="uploadArea">
             <div class="upload-icon">📁</div>
@@ -327,20 +427,42 @@
             <button class="remove" id="removeFile">删除</button>
         </div>
 
-        <div class="settings">
-            <div class="setting-item">
-                <label>📐 图片缩放倍数</label>
-                <select id="scale">
-                    <option value="1">1x (原始大小)</option>
-                    <option value="1.5">1.5x (中等)</option>
-                    <option value="2" selected>2x (高清)</option>
-                    <option value="3">3x (超清)</option>
-                    <option value="4">4x (打印级)</option>
-                </select>
+        <!-- 页面转图片设置 -->
+        <div id="convertSettings">
+            <div class="settings">
+                <div class="setting-item">
+                    <label>📐 图片缩放倍数</label>
+                    <select id="scale">
+                        <option value="1">1x (原始大小)</option>
+                        <option value="1.5">1.5x (中等)</option>
+                        <option value="2" selected>2x (高清)</option>
+                        <option value="3">3x (超清)</option>
+                        <option value="4">4x (打印级)</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <label>📝 文件名前缀</label>
+                    <input type="text" id="prefix" value="page" placeholder="page">
+                </div>
             </div>
-            <div class="setting-item">
-                <label>📝 文件名前缀</label>
-                <input type="text" id="prefix" value="page" placeholder="page">
+        </div>
+
+        <!-- 提取图片设置 -->
+        <div id="extractSettings" class="hidden">
+            <div class="settings">
+                <div class="setting-item">
+                    <label>🖼️ 图片质量</label>
+                    <select id="extractQuality">
+                        <option value="1">原始质量</option>
+                        <option value="0.9" selected>高 (90%)</option>
+                        <option value="0.8">中 (80%)</option>
+                        <option value="0.6">低 (60%)</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <label>📝 文件名前缀</label>
+                    <input type="text" id="extractPrefix" value="img" placeholder="img">
+                </div>
             </div>
         </div>
 
@@ -348,7 +470,7 @@
 
         <div class="progress-container" id="progressContainer">
             <div class="progress-text">
-                <span id="progressText">正在转换...</span>
+                <span id="progressText">正在处理...</span>
                 <span id="progressPercent">0%</span>
             </div>
             <div class="progress-bar">
@@ -361,17 +483,30 @@
                 <h3>预览</h3>
                 <span class="preview-count" id="previewCount"></span>
             </div>
+            <div class="stats hidden" id="statsArea">
+                <div class="stat-item">总页数: <strong id="totalPages">0</strong></div>
+                <div class="stat-item">提取图片: <strong id="totalImages">0</strong></div>
+            </div>
             <div class="preview-grid" id="previewGrid"></div>
             <button class="btn download-all" id="downloadAllBtn">📥 打包下载所有图片</button>
         </div>
 
-        <div class="tips">
-            <h4>💡 使用提示</h4>
+        <div class="tips" id="tipsConvert">
+            <h4>💡 页面转图片提示</h4>
             <ul>
-                <li>支持多页 PDF 文档，每页单独生成一个 PNG 文件</li>
-                <li>文件名将自动按页码命名，如：page_1.png, page_2.png</li>
+                <li>将 PDF 每页转换为一张高清 PNG 图片</li>
+                <li>文件命名：前缀_页码.png（如 page_1.png）</li>
                 <li>建议选择 2x 或更高倍数以获得清晰图片</li>
-                <li>转换后的图片会自动打包为 ZIP 文件下载</li>
+            </ul>
+        </div>
+
+        <div class="tips hidden" id="tipsExtract">
+            <h4>💡 提取图片提示</h4>
+            <ul>
+                <li>从 PDF 中提取嵌入的图片（插图、照片等）</li>
+                <li>自动跳过只有文字的页面</li>
+                <li>文件命名：前缀_页码_序号.png（如 img_1_1.png）</li>
+                <li>按页码和提取顺序排列</li>
             </ul>
         </div>
     </div>
@@ -381,7 +516,9 @@
 
         let currentFile = null;
         let convertedImages = [];
+        let currentMode = 'convert';
 
+        // DOM 元素
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
         const fileInfo = document.getElementById('fileInfo');
@@ -397,8 +534,40 @@
         const previewGrid = document.getElementById('previewGrid');
         const previewCount = document.getElementById('previewCount');
         const downloadAllBtn = document.getElementById('downloadAllBtn');
-        const scaleSelect = document.getElementById('scale');
-        const prefixInput = document.getElementById('prefix');
+        
+        // 模式切换
+        const modeTabs = document.querySelectorAll('.mode-tab');
+        const convertSettings = document.getElementById('convertSettings');
+        const extractSettings = document.getElementById('extractSettings');
+        const tipsConvert = document.getElementById('tipsConvert');
+        const tipsExtract = document.getElementById('tipsExtract');
+        const statsArea = document.getElementById('statsArea');
+
+        modeTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                modeTabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                currentMode = tab.dataset.mode;
+                
+                if (currentMode === 'convert') {
+                    convertSettings.classList.remove('hidden');
+                    extractSettings.classList.add('hidden');
+                    tipsConvert.classList.remove('hidden');
+                    tipsExtract.classList.add('hidden');
+                    statsArea.classList.add('hidden');
+                    convertBtn.textContent = '开始转换';
+                    convertBtn.classList.remove('btn-extract');
+                } else {
+                    convertSettings.classList.add('hidden');
+                    extractSettings.classList.remove('hidden');
+                    tipsConvert.classList.add('hidden');
+                    tipsExtract.classList.remove('hidden');
+                    convertBtn.textContent = '开始提取图片';
+                    convertBtn.classList.add('btn-extract');
+                }
+                previewArea.classList.remove('active');
+            });
+        });
 
         // 点击上传
         uploadArea.addEventListener('click', () => fileInput.click());
@@ -455,10 +624,19 @@
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         }
 
-        // 转换 PDF 到 PNG
+        // 主处理函数
         convertBtn.addEventListener('click', async () => {
             if (!currentFile) return;
 
+            if (currentMode === 'convert') {
+                await convertPagesToImages();
+            } else {
+                await extractImagesFromPDF();
+            }
+        });
+
+        // 页面转图片
+        async function convertPagesToImages() {
             convertBtn.disabled = true;
             progressContainer.classList.add('active');
             previewArea.classList.remove('active');
@@ -468,8 +646,8 @@
                 const arrayBuffer = await currentFile.arrayBuffer();
                 const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                 const totalPages = pdf.numPages;
-                const scale = parseFloat(scaleSelect.value);
-                const prefix = prefixInput.value || 'page';
+                const scale = parseFloat(document.getElementById('scale').value);
+                const prefix = document.getElementById('prefix').value || 'page';
 
                 previewGrid.innerHTML = '';
                 
@@ -478,6 +656,7 @@
                     const percent = Math.round((i / totalPages) * 100);
                     progressPercent.textContent = percent + '%';
                     progressFill.style.width = percent + '%';
+                    progressFill.classList.remove('extract');
 
                     const page = await pdf.getPage(i);
                     const viewport = page.getViewport({ scale });
@@ -515,6 +694,7 @@
                 progressFill.style.width = '100%';
 
                 previewCount.textContent = `共 ${totalPages} 页`;
+                statsArea.classList.add('hidden');
                 previewArea.classList.add('active');
 
             } catch (error) {
@@ -523,13 +703,149 @@
             } finally {
                 convertBtn.disabled = false;
             }
-        });
+        }
+
+        // 提取图片
+        async function extractImagesFromPDF() {
+            convertBtn.disabled = true;
+            progressContainer.classList.add('active');
+            previewArea.classList.remove('active');
+            convertedImages = [];
+
+            try {
+                const arrayBuffer = await currentFile.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                const totalPages = pdf.numPages;
+                const quality = parseFloat(document.getElementById('extractQuality').value);
+                const prefix = document.getElementById('extractPrefix').value || 'img';
+
+                previewGrid.innerHTML = '';
+                let totalImages = 0;
+
+                for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+                    progressText.textContent = `正在分析第 ${pageNum} / ${totalPages} 页...`;
+                    const percent = Math.round((pageNum / totalPages) * 100);
+                    progressPercent.textContent = percent + '%';
+                    progressFill.style.width = percent + '%';
+                    progressFill.classList.add('extract');
+
+                    const page = await pdf.getPage(pageNum);
+                    const ops = await page.getOperatorList();
+                    
+                    // 查找图片操作
+                    const imgInfos = [];
+                    
+                    for (let i = 0; i < ops.fnArray.length; i++) {
+                        // PDFJS 中 paintImageXObject 表示绘制图片
+                        if (ops.fnArray[i] === pdfjsLib.OPS.paintImageXObject || 
+                            ops.fnArray[i] === pdfjsLib.OPS.paintJpegXObject) {
+                            const imgName = ops.argsArray[i][0];
+                            imgInfos.push({ name: imgName, index: i });
+                        }
+                    }
+
+                    // 如果本页有图片，提取它们
+                    if (imgInfos.length > 0) {
+                        const scale = 2; // 使用较高分辨率提取
+                        const viewport = page.getViewport({ scale });
+
+                        for (let imgIdx = 0; imgIdx < imgInfos.length; imgIdx++) {
+                            const imgName = imgInfos[imgIdx].name;
+                            
+                            try {
+                                // 获取图片对象
+                                const imgObj = await page.objs.get(imgName);
+                                
+                                if (imgObj && imgObj.data) {
+                                    // 创建 canvas 绘制图片
+                                    const canvas = document.createElement('canvas');
+                                    const ctx = canvas.getContext('2d');
+                                    canvas.width = imgObj.width;
+                                    canvas.height = imgObj.height;
+
+                                    // 如果是已经编码的图片数据 (JPEG)
+                                    if (imgObj.kind === pdfjsLib.ImageKind.JPEG_IMAGE || 
+                                        imgObj.data.length > imgObj.width * imgObj.height) {
+                                        
+                                        // 创建 ImageData 从原始数据
+                                        const imgData = ctx.createImageData(imgObj.width, imgObj.height);
+                                        imgData.data.set(imgObj.data);
+                                        ctx.putImageData(imgData, 0, 0);
+                                    } else if (imgObj.kind === pdfjsLib.ImageKind.RGBA_32BPP) {
+                                        // RGBA 格式
+                                        const imgData = ctx.createImageData(imgObj.width, imgObj.height);
+                                        imgData.data.set(imgObj.data);
+                                        ctx.putImageData(imgData, 0, 0);
+                                    } else {
+                                        // 其他格式，尝试直接绘制
+                                        const imageData = ctx.createImageData(imgObj.width, imgObj.height);
+                                        const data = imgObj.data;
+                                        for (let j = 0; j < data.length; j++) {
+                                            imageData.data[j] = data[j];
+                                        }
+                                        ctx.putImageData(imageData, 0, 0);
+                                    }
+
+                                    // 转换为数据URL
+                                    const imgDataUrl = canvas.toDataURL('image/png', quality);
+                                    totalImages++;
+                                    const fileName = `${prefix}_${pageNum}_${imgIdx + 1}.png`;
+                                    
+                                    convertedImages.push({
+                                        name: fileName,
+                                        data: imgDataUrl,
+                                        page: pageNum,
+                                        index: imgIdx + 1
+                                    });
+
+                                    // 添加预览
+                                    const previewItem = document.createElement('div');
+                                    previewItem.className = 'preview-item';
+                                    previewItem.innerHTML = `
+                                        <img src="${imgDataUrl}" alt="Image ${totalImages}">
+                                        <div class="page-num">${fileName}</div>
+                                        <div class="page-info">
+                                            <span>第${pageNum}页</span>
+                                            <span>第${imgIdx + 1}张</span>
+                                        </div>
+                                    `;
+                                    previewGrid.appendChild(previewItem);
+                                }
+                            } catch (e) {
+                                console.warn(`提取图片失败 ${imgName}:`, e);
+                            }
+                        }
+                    }
+                }
+
+                progressText.textContent = '提取完成！';
+                progressPercent.textContent = '100%';
+                progressFill.style.width = '100%';
+
+                if (totalImages === 0) {
+                    previewCount.textContent = `共 ${totalPages} 页，未发现嵌入图片`;
+                    alert('未从 PDF 中提取到任何图片。可能该 PDF 没有嵌入图片，或图片格式不被支持。');
+                } else {
+                    previewCount.textContent = `共 ${totalPages} 页，提取 ${totalImages} 张图片`;
+                    document.getElementById('totalPages').textContent = totalPages;
+                    document.getElementById('totalImages').textContent = totalImages;
+                    statsArea.classList.remove('hidden');
+                }
+                
+                previewArea.classList.add('active');
+
+            } catch (error) {
+                console.error(error);
+                alert('提取失败: ' + error.message);
+            } finally {
+                convertBtn.disabled = false;
+            }
+        }
 
         // 打包下载
         downloadAllBtn.addEventListener('click', async () => {
             if (convertedImages.length === 0) return;
 
-            // 创建 ZIP 文件
             const zip = new JSZip();
             
             convertedImages.forEach(img => {
@@ -539,18 +855,13 @@
 
             const content = await zip.generateAsync({ type: 'blob' });
             
-            // 下载
             const link = document.createElement('a');
             link.href = URL.createObjectURL(content);
-            link.download = currentFile.name.replace('.pdf', '_images.zip');
+            const suffix = currentMode === 'extract' ? '_extracted' : '_images';
+            link.download = currentFile.name.replace('.pdf', suffix + '.zip');
             link.click();
             URL.revokeObjectURL(link.href);
         });
-
-        // 动态加载 JSZip
-        const jszipScript = document.createElement('script');
-        jszipScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-        document.head.appendChild(jszipScript);
     </script>
 </body>
 </html>
